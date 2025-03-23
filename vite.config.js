@@ -8,4 +8,13 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
   },
+  // server: {
+  //   proxy: {
+  //     '/manifest.json': {
+  //       target: 'https://github.dev',
+  //       changeOrigin: true,
+  //       secure: false,
+  //     },
+  //   },
+  // },
 })
