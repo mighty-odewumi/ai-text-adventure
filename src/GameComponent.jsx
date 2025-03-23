@@ -1,80 +1,106 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 const GameComponent = () => {
-    const [scene, setScene] = useState('');
+    const [gameState, setGameState] = useState({
+        scene: '',
+        health: 100,
+        score: 0,
+        inventory: [],
+        secrets: [],
+        history: [],
+    });
     const [prompt, setPrompt] = useState('');
-    const [health, setHealth] = useState(100);
-    const [score, setScore] = useState(0);
-    const [inventory, setInventory] = useState([]);
-    const [secrets, setSecrets] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [userId, setUserId] = useState(null);  // Unique user ID
-    const backendURL = "https://zany-acorn-q4wg9q95rw7f69vx-3001.app.github.dev";
+    const [userId, setUserId] = useState(null);
+    const backendURL = import.meta.env.MODE === "development" ? "https://zany-acorn-q4wg9q95rw7f69vx-3001.app.github.dev" : "https://ai-text-adventure.onrender.com";
 
     useEffect(() => {
-        // Generate a unique user ID (e.g., using localStorage)
         const storedUserId = localStorage.getItem('userId');
-        const newUserId = storedUserId || Math.random().toString(36).substring(2, 15); // Simple random ID
+        const newUserId = storedUserId || Math.random().toString(36).substring(2, 15);
         localStorage.setItem('userId', newUserId);
         setUserId(newUserId);
-
     }, []);
-    // Fetch initial scene on component mount
-    useEffect(() => {
-        if (userId) {
-            setLoading(true);
-            fetch(`${backendURL}/start?userId=${userId}`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! Status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    setScene(data.scene);
-                    setHealth(data.health);
-                    setScore(data.score);
-                    setInventory(data.inventory);
-                    setSecrets(data.secrets);
-                })
-                .catch(error => {
-                    console.error('Error fetching initial scene:', error);
-                    setScene(`Failed to load initial scene: ${error.message}`);
-                })
-                .finally(() => setLoading(false));
+
+    const fetchInitialScene = useCallback(async () => {
+        if (!userId) return;
+
+        setLoading(true);
+        try {
+            const response = await fetch(`${backendURL}/start?userId=${userId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            const data = await response.json();
+            setGameState(prevState => ({
+                ...prevState,
+                scene: data.scene,
+                health: data.health,
+                score: data.score,
+                inventory: data.inventory,
+                secrets: data.secrets,
+                history: [data.scene],
+            }));
+        } catch (error) {
+            console.error('Error fetching initial scene:', error);
+            setGameState(prevState => ({ ...prevState, scene: `Failed to load initial scene: ${error.message}` }));
+        } finally {
+            setLoading(false);
         }
     }, [userId, backendURL]);
 
+    useEffect(() => {
+        fetchInitialScene();
+    }, [fetchInitialScene]);
 
     const handleSubmit = async (event) => {
         event.preventDefault();
         setLoading(true);
 
         try {
-            const backendResponse = await fetch(`${backendURL}/generate`, {
+            const response = await fetch(`${backendURL}/generate`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ prompt: prompt, userId: userId }),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, userId }),
             });
 
-            if (!backendResponse.ok) {
-                throw new Error(`HTTP error! Status: ${backendResponse.status}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
             }
 
-            const data = await backendResponse.json();
-            setScene(data.scene);
-            setHealth(data.health);
-            setScore(data.score);
-            setInventory(data.inventory);
-            setSecrets(data.secrets);
+            const data = await response.json();
+
+            setGameState(prevState => {
+                const newScene = data.scene;
+                // **Check for duplicate before adding to history**
+                if (!prevState.history.includes(newScene)) {
+                    return {
+                        ...prevState,
+                        scene: newScene,
+                        health: data.health,
+                        score: data.score,
+                        inventory: data.inventory,
+                        secrets: data.secrets,
+                        history: [...prevState.history, newScene], // Append only if not a duplicate
+                    };
+                } else {
+                    // If scene is a duplicate, just update the other game state properties, not the history.
+                     return {
+                        ...prevState,
+                        scene: newScene,
+                        health: data.health,
+                        score: data.score,
+                        inventory: data.inventory,
+                        secrets: data.secrets,
+                    };
+                }
+            });
+
         } catch (error) {
             console.error('Error calling backend:', error);
-            setScene(`Error: ${error.message}`);
+            setGameState(prevState => ({ ...prevState, scene: `Error: ${error.message}` }));
         } finally {
             setLoading(false);
-            setPrompt('');  // Clear the prompt input after submission
+            setPrompt('');
         }
     };
 
@@ -82,13 +108,20 @@ const GameComponent = () => {
         <div>
             <h1>The Sunken City of Aethelgard</h1>
             <div>
-                Health: {health} | Score: {score} | Inventory: {inventory.join(', ') || 'Empty'} | Secrets: {secrets.length}
+                Health: {gameState.health} | Score: {gameState.score} | Inventory: {gameState.inventory.join(', ') || 'Empty'} | Secrets: {gameState.secrets.length}
+            </div>
+
+            <h2>History:</h2>
+            <div>
+                {gameState.history.map((oldScene, index) => (
+                    <p key={index}>{oldScene}</p>
+                ))}
             </div>
 
             {loading ? (
                 <p>Loading...</p>
             ) : (
-                <p>{scene}</p>
+                <p>{gameState.scene}</p>
             )}
 
             <form onSubmit={handleSubmit}>
